@@ -1,110 +1,124 @@
 package edu.jsu.mcis.cs310;
 
-import com.github.cliftonlabs.json_simple.*;
-import com.opencsv.*;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.util.List;
+
+import com.opencsv.CSVReader;
+import com.opencsv.CSVReaderBuilder;
+import com.opencsv.CSVWriterBuilder;
+import com.opencsv.ICSVWriter;
+
+import com.github.cliftonlabs.json_simple.JsonArray;
+import com.github.cliftonlabs.json_simple.JsonObject;
+import com.github.cliftonlabs.json_simple.Jsoner;
 
 public class Converter {
-    
-    /*
-        
-        Consider the following CSV data, a portion of a database of episodes of
-        the classic "Star Trek" television series:
-        
-        "ProdNum","Title","Season","Episode","Stardate","OriginalAirdate","RemasteredAirdate"
-        "6149-02","Where No Man Has Gone Before","1","01","1312.4 - 1313.8","9/22/1966","1/20/2007"
-        "6149-03","The Corbomite Maneuver","1","02","1512.2 - 1514.1","11/10/1966","12/9/2006"
-        
-        (For brevity, only the header row plus the first two episodes are shown
-        in this sample.)
-    
-        The corresponding JSON data would be similar to the following; tabs and
-        other whitespace have been added for clarity.  Note the curly braces,
-        square brackets, and double-quotes!  These indicate which values should
-        be encoded as strings and which values should be encoded as integers, as
-        well as the overall structure of the data:
-        
-        {
-            "ProdNums": [
-                "6149-02",
-                "6149-03"
-            ],
-            "ColHeadings": [
-                "ProdNum",
-                "Title",
-                "Season",
-                "Episode",
-                "Stardate",
-                "OriginalAirdate",
-                "RemasteredAirdate"
-            ],
-            "Data": [
-                [
-                    "Where No Man Has Gone Before",
-                    1,
-                    1,
-                    "1312.4 - 1313.8",
-                    "9/22/1966",
-                    "1/20/2007"
-                ],
-                [
-                    "The Corbomite Maneuver",
-                    1,
-                    2,
-                    "1512.2 - 1514.1",
-                    "11/10/1966",
-                    "12/9/2006"
-                ]
-            ]
-        }
-        
-        Your task for this program is to complete the two conversion methods in
-        this class, "csvToJson()" and "jsonToCsv()", so that the CSV data shown
-        above can be converted to JSON format, and vice-versa.  Both methods
-        should return the converted data as strings, but the strings do not need
-        to include the newlines and whitespace shown in the examples; again,
-        this whitespace has been added only for clarity.
-        
-        NOTE: YOU SHOULD NOT WRITE ANY CODE WHICH MANUALLY COMPOSES THE OUTPUT
-        STRINGS!!!  Leave ALL string conversion to the two data conversion
-        libraries we have discussed, OpenCSV and json-simple.  See the "Data
-        Exchange" lecture notes for more details, including examples.
-        
-    */
-    
+
     @SuppressWarnings("unchecked")
     public static String csvToJson(String csvString) {
-        
-        String result = "{}"; // default return value; replace later!
-        
-        try {
-        
-            // INSERT YOUR CODE HERE
-            
-        }
-        catch (Exception e) {
+
+        try (CSVReader reader = new CSVReaderBuilder(new StringReader(csvString)).build()) {
+            List<String[]> rows = reader.readAll();
+
+            JsonObject root = new JsonObject();
+            if (rows.isEmpty()) return root.toJson().trim();
+
+
+            String[] header = rows.get(0);
+            JsonArray colHeadings = new JsonArray();
+            for (String h : header) colHeadings.add(h);
+
+            JsonArray prodNums = new JsonArray();
+            JsonArray data = new JsonArray();
+
+            for (int r = 1; r < rows.size(); r++) {
+                String[] line = rows.get(r);
+                if (line == null || line.length == 0) continue;
+
+
+                prodNums.add(line[0]);
+
+
+                JsonArray row = new JsonArray();
+                for (int c = 1; c < header.length; c++) {
+                    String heading = header[c];
+                    String val = (c < line.length) ? line[c] : "";
+
+                    if (("Season".equals(heading) || "Episode".equals(heading)) && !val.isEmpty()) {
+                        row.add(Integer.parseInt(val.trim()));
+                    } else {
+                        row.add(val);
+                    }
+                }
+                data.add(row);
+            }
+
+            root.put("ProdNums",    prodNums);
+            root.put("ColHeadings", colHeadings);
+            root.put("Data",        data);
+
+            return root.toJson().trim();
+
+        } catch (Exception e) {
             e.printStackTrace();
+            return "{}";
         }
-        
-        return result.trim();
-        
     }
-    
+
     @SuppressWarnings("unchecked")
     public static String jsonToCsv(String jsonString) {
-        
-        String result = ""; // default return value; replace later!
-        
+
         try {
-            
-            // INSERT YOUR CODE HERE
-            
-        }
-        catch (Exception e) {
+            JsonObject root = (JsonObject) Jsoner.deserialize(jsonString);
+
+            JsonArray prodNums    = (JsonArray) root.get("ProdNums");
+            JsonArray colHeadings = (JsonArray) root.get("ColHeadings");
+            JsonArray data        = (JsonArray) root.get("Data");
+
+            StringWriter sw = new StringWriter();
+
+            try (ICSVWriter writer = new CSVWriterBuilder(sw).withLineEnd("\n").build()) {
+
+
+                String[] header = new String[colHeadings.size()];
+                for (int i = 0; i < colHeadings.size(); i++) {
+                    header[i] = String.valueOf(colHeadings.get(i));
+                }
+                writer.writeNext(header, true); 
+
+
+                for (int r = 0; r < data.size(); r++) {
+                    JsonArray rowJson = (JsonArray) data.get(r);
+                    String[] row = new String[header.length];
+
+
+                    row[0] = String.valueOf(prodNums.get(r));
+
+
+                    for (int c = 1; c < header.length; c++) {
+                        String heading = header[c];
+                        Object cell = rowJson.get(c - 1);
+
+                        if ("Episode".equals(heading) && (cell instanceof Number)) {
+                            row[c] = String.format("%02d", ((Number) cell).intValue()); 
+                        } else {
+                            row[c] = String.valueOf(cell);
+                        }
+                    }
+
+                    writer.writeNext(row, true);
+                }
+            }
+
+
+            String out = sw.toString();
+            if (out.endsWith("\n")) out = out.substring(0, out.length() - 1);
+            return out;
+
+        } catch (Exception e) {
             e.printStackTrace();
+            return "";
         }
-        
-        return result.trim();
-        
     }
-    
 }
